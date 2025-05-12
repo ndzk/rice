@@ -11,7 +11,7 @@ sudo pacman -S --noconfirm base-devel git bspwm sxhkd alacritty xorg xorg-xinit 
   zsh feh dmenu lightdm lightdm-gtk-greeter lightdm-gtk-greeter-settings \
   ttf-jetbrains-mono ttf-font-awesome unzip \
   networkmanager nm-connection-editor pipewire pipewire-audio \
-  alsa-utils xbacklight acpi wireplumber libnotify dunst xdotool \
+  alsa-utils brightnessctl acpi wireplumber libnotify dunst xdotool \
   maim neofetch lxappearance qt5ct gtk-engine-murrine
 
 # enable services
@@ -84,9 +84,9 @@ XF86AudioLowerVolume
 XF86AudioMute
   wpctl set-mute @DEFAULT_AUDIO_SINK@ toggle && notify-send 'mute toggle'
 XF86MonBrightnessUp
-  xbacklight -inc 10 && notify-send 'brightness up'
+  brightnessctl set +10% && notify-send 'brightness up'
 XF86MonBrightnessDown
-  xbacklight -dec 10 && notify-send 'brightness down'
+  brightnessctl set 10%- && notify-send 'brightness down'
 EOF
 
 # 7. screenshot menu script
