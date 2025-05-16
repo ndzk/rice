@@ -145,6 +145,20 @@ fi
 
 success "Enhancements installed"
 
+# === Configure Fan Control with NBFC (NoteBook FanControl) ===
+step "Installing and configuring NBFC for fan control"
+
+# Install nbfc from AUR
+yay -S --noconfirm nbfc
+
+# Apply profile for ThinkPad X220
+nbfc config --import "Lenovo ThinkPad X220"
+nbfc config --set-startup true
+nbfc start
+
+success "NBFC fan control active"
+
+
 # === Configure ThinkPad fan control (AUR safe) ===
 step "Setting up fan control with ThinkFan (AUR)"
 
@@ -188,6 +202,10 @@ success "ThinkFan configured"
 
 
 
+
+
+# Install xautolock from AUR (used for auto lock after inactivity)
+yay -S --noconfirm xautolock
 
 # === Setup lockscreen with lid close ===
 step "Setting up lock screen"
