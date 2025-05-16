@@ -1,38 +1,218 @@
+
+
+ensure_zenity_or_fallback() {
+  if ! command -v zenity >/dev/null 2>&1; then
+    echo -e "\033[1;33mZenity is not installed. Attempt to install it? [Y/n]\033[0m"
+    read -r reply
+    if [[ "$reply" =~ ^[Nn]$ ]]; then
+      echo -e "\033[1;33mProceeding with terminal mode.\033[0m"
+      choose_theme
+    else
+      sudo pacman -S --noconfirm zenity && choose_theme_gui || choose_theme
+    fi
+  else
+    choose_theme_gui
+  fi
+}
+
+
+choose_theme_gui() {
+  if command -v zenity >/dev/null 2>&1; then
+    theme_choice=$(zenity --list --title="Choose Theme" --radiolist \
+      --column="Select" --column="Theme" \
+      TRUE "Dark" FALSE "Light")
+
+    if [ "$theme_choice" = "Light" ]; then
+      THEME_BG="#ffffff"
+      THEME_FG="#000000"
+    else
+      THEME_BG="#000000"
+      THEME_FG="#ffffff"
+    fi
+  else
+    echo -e "\033[1;31mZenity not found, falling back to terminal theme selection.\033[0m"
+    choose_theme
+  fi
+}
+
+
+# Theme selection
+choose_theme() {
+  echo -e "\n\033[1;36m🎨 Choose a color theme:\033[0m"
+  echo "1) Dark (default)"
+  echo "2) Light"
+  read -rp "Enter choice [1-2]: " theme_choice
+  case "$theme_choice" in
+    2)
+      THEME_BG="$THEME_FG"
+      THEME_FG="$THEME_BG"
+      ;;
+    *)
+      THEME_BG="$THEME_BG"
+      THEME_FG="$THEME_FG"
+      ;;
+  esac
+  echo -e "\nTheme selected: Background: $THEME_BG, Foreground: $THEME_FG"
+}
+
+# Simple progress function
+progress_bar() {
+  local msg=$1
+  echo -ne "\033[1;33m$msg...\033[0m"
+  for i in {1..10}; do
+    echo -n "."
+    sleep 0.1
+  done
+  echo -e " \033[1;32m✔\033[0m"
+}
+
+header() {
+  echo -e "\n\033[1;35m──────────────────────────────────────────────"
+  echo -e "rice installer"
+  echo -e "──────────────────────────────────────────────\033[0m\n"
+}
+
+step() {
+  echo -e "\033[1;34m🔧 $1...\033[0m"
+}
+
+success() {
+  echo -e "\033[1;32m[✔] $1\033[0m"
+}
+
+fail() {
+  echo -e "\033[1;31m[❌] $1\033[0m"
+}
+
+header
+ensure_zenity_or_fallback
+
 #!/bin/bash
 
 set -e
 
-# === minimalist rice for thinkpad x220 ===
-# bspwm + polybar + dmenu + nmcli + pipewire + full keybindings and menus + notifications + greeter theme
+# === minimalist rice for ThinkPad X220 (Arch Linux) ===
 
-# 1. install core packages
-sudo pacman -Syu --noconfirm
-sudo pacman -S --noconfirm base-devel git bspwm sxhkd alacritty xorg xorg-xinit \
-  zsh feh dmenu lightdm lightdm-gtk-greeter lightdm-gtk-greeter-settings \
-  ttf-jetbrains-mono ttf-font-awesome unzip \
-  networkmanager nm-connection-editor pipewire pipewire-audio \
-  alsa-utils brightnessctl acpi wireplumber libnotify dunst xdotool \
-  maim neofetch lxappearance qt5ct gtk-engine-murrine
+# 1. Update system and install core packages
+step "Updating system"
+sudo pacman -Syu --noconfirm || fail "System update failed"
+success "System updated"
+step "Installing core packages"
+sudo pacman -S --needed --noconfirm base-devel git bspwm sxhkd alacritty xorg xorg-xinit polybar thunar   zsh feh dmenu lightdm lightdm-gtk-greeter lightdm-gtk-greeter-settings   ttf-jetbrains-mono ttf-font-awesome unzip   networkmanager nm-connection-editor pipewire pipewire-audio   alsa-utils brightnessctl acpi wireplumber libnotify dunst xdotool   maim neofetch lxappearance qt5ct gtk-engine-murrine acpi
 
-# enable services
+# 2. Enable services
+step "Enabling NetworkManager"
 sudo systemctl enable NetworkManager
+success "NetworkManager enabled"
+step "Enabling LightDM"
 sudo systemctl enable lightdm
+success "LightDM enabled"
 
-# 2. install yay and aur tools
-cd ~
-git clone https://aur.archlinux.org/yay.git
-cd yay && makepkg -si --noconfirm
-cd .. && rm -rf yay
-yay -S --noconfirm polybar-git nmcli-dmenu-git betterlockscreen
+# === Optional laptop enhancements ===
+step "Installing laptop enhancements"
 
-# 3. setup folders
+# Power saving with TLP
+sudo pacman -S --noconfirm tlp tlp-rdw
+sudo systemctl enable tlp
+
+# Redshift for night lighting
+sudo pacman -S --noconfirm redshift
+
+# xdg user dirs
+sudo pacman -S --noconfirm xdg-user-dirs
+xdg-user-dirs-update
+
+# Trash CLI for safe file deletion
+sudo pacman -S --noconfirm trash-cli
+echo "alias rm='trash'" >> ~/.zshrc
+
+# Bluetooth support
+sudo pacman -S --noconfirm blueman bluez
+sudo systemctl enable bluetooth
+
+# Optional ThinkPad battery control
+if ! command -v tpacpi-bat >/dev/null 2>&1; then
+  yay -S --noconfirm tpacpi-bat
+  sudo tpacpi-bat -s 1 80 || true
+fi
+
+success "Enhancements installed"
+
+# === Configure ThinkPad fan control ===
+step "Configuring fan control"
+
+# Install thinkfan and sensors
+sudo pacman -S --noconfirm thinkfan lm_sensors
+
+# Enable fan control in kernel module
+echo "options thinkpad_acpi fan_control=1" | sudo tee /etc/modprobe.d/thinkfan.conf
+echo "thinkpad_acpi" | sudo tee /etc/modules-load.d/thinkfan.conf
+
+# Run sensors-detect automatically (no interaction)
+yes | sudo sensors-detect --auto
+
+# Create minimal thinkfan.conf
+sudo tee /etc/thinkfan.conf >/dev/null << EOF
+sensor /sys/class/hwmon/hwmon0/temp1_input
+
+(0,     0,      55)
+(1,     50,     60)
+(2,     58,     65)
+(3,     63,     70)
+(4,     68,     75)
+(5,     73,     80)
+(7,     78,     32767)
+EOF
+
+# Enable the thinkfan service
+sudo systemctl enable thinkfan
+sudo systemctl start thinkfan
+
+success "Fan control configured"
+
+
+
+# === Setup lockscreen with lid close ===
+step "Setting up lock screen"
+
+# Ensure i3lock and xautolock are installed
+sudo pacman -S --noconfirm i3lock xautolock
+
+# Generate lockscreen background
+betterlockscreen -u ~/Pictures/wallpaper.png
+
+# Autolock after 10 min idle
+echo 'xautolock -time 10 -locker "betterlockscreen -l" &' >> ~/.config/bspwm/bspwmrc
+
+# Handle lid close with systemd (lock on suspend)
+step "Configuring lid close action"
+sudo sed -i 's/^#HandleLidSwitch=.*/HandleLidSwitch=suspend/' /etc/systemd/logind.conf
+sudo sed -i 's/^#HandleLidSwitchDocked=.*/HandleLidSwitchDocked=suspend/' /etc/systemd/logind.conf
+sudo systemctl restart systemd-logind
+
+success "Lockscreen with lid close configured"
+
+
+# 3. Install yay and AUR packages
+if ! command -v yay &>/dev/null; then
+  step "Installing yay AUR helper"
+git clone https://aur.archlinux.org/yay.git ~/yay
+  cd ~/yay && makepkg -si --noconfirm
+  cd .. && rm -rf ~/yay
+fi
+yay -S --needed --noconfirm nmcli-dmenu-git betterlockscreen
+
+# 4. Create necessary directories
+step "Creating configuration directories"
 mkdir -p ~/.config/{bspwm,sxhkd,alacritty,polybar,picom,dunst}
 mkdir -p ~/Pictures/screenshots
 
-# 4. download ascii wallpaper
+# 5. Wallpaper
+step "Downloading wallpaper"
 curl -L -o ~/Pictures/wallpaper.png https://i.imgur.com/cKr62pe.png
 
-# 5. generate bspwm config
+# 6. BSPWM config
+step "Setting up BSPWM config"
 cat > ~/.config/bspwm/bspwmrc << 'EOF'
 #!/bin/bash
 setxkbmap pl
@@ -41,24 +221,16 @@ picom --config ~/.config/picom/picom.conf &
 dunst &
 feh --bg-scale ~/Pictures/wallpaper.png &
 ~/.config/polybar/launch.sh &
-bspc monitor -d i ii iii iv v vi vii viii ix x
-EOF'
-#!/bin/bash
-sxhkd &
-picom --config ~/.config/picom/picom.conf &
-dunst &
-feh --bg-scale ~/Pictures/wallpaper.png &
-~/.config/polybar/launch.sh &
-bspc monitor -d i ii iii iv v vi vii viii ix x
+bspc monitor -d I II III IV V VI VII VIII IX X
 EOF
 chmod +x ~/.config/bspwm/bspwmrc
 
-# 6. generate sxhkd config
+# 7. SXHKD config
 cat > ~/.config/sxhkd/sxhkdrc << 'EOF'
 super + Return
   alacritty
 super + d
-  dmenu_run
+  dmenu_run -fn "JetBrainsMono-10" -nb "$THEME_BG" -nf "$THEME_FG" -sb "$THEME_FG" -sf "$THEME_BG" -h 24
 super + w
   ~/.config/polybar/wifimenu.sh
 super + v
@@ -89,70 +261,9 @@ XF86MonBrightnessDown
   brightnessctl set 10%- && notify-send 'brightness down'
 EOF
 
-# 7. screenshot menu script
-cat > ~/.config/polybar/screenshotmenu.sh << 'EOF'
-#!/bin/bash
-choice=$(printf "entire screen\nselect area\nactive window" | dmenu -i -p "screenshot")
-dest=~/Pictures/screenshots/screenshot_$(date +%Y-%m-%d_%H-%M-%S).png
-case "$choice" in
-  "entire screen") maim "$dest";;
-  "select area") maim -s "$dest";;
-  "active window") maim -i $(xdotool getactivewindow) "$dest";;
-esac
-[ -f "$dest" ] && notify-send "screenshot saved to $dest"
-EOF
-chmod +x ~/.config/polybar/screenshotmenu.sh
+# 8. Polybar scripts and configs
 
-# 8. polybar config
-cat > ~/.config/polybar/config.ini << 'EOF'
-[bar/top]
-width = 100%
-height = 24
-background = #000000
-foreground = #ffffff
-font-0 = JetBrainsMono:size=10;1
-modules-left = bspwm
-modules-center = activewindow
-modules-right = volume wlan battery date
-
-[module/bspwm]
-type = internal/bspwm
-label-focused = %name%
-label-focused-background = #ffffff
-label-focused-foreground = #000000
-label-occupied = %name%
-label-empty =
-
-[module/activewindow]
-type = custom/script
-exec = xprop -id $(xdotool getactivewindow 2>/dev/null) WM_NAME | cut -d '"' -f 2 || echo ""
-interval = 1
-
-[module/volume]
-type = custom/script
-exec = echo VOL
-click-left = ~/.config/polybar/volumemenu.sh
-
-[module/wlan]
-type = custom/script
-exec = echo WIFI
-click-left = ~/.config/polybar/wifimenu.sh
-
-[module/date]
-type = internal/date
-interval = 5
-format = %Y-%m-%d %H:%M
-
-[module/battery]
-type = internal/battery
-battery = BAT0
-adapter = AC
-full-at = 98
-format-charging = CHG %percentage%%
-format-discharging = BAT %percentage%%
-EOF
-
-# 9. polybar scripts
+# launch.sh
 cat > ~/.config/polybar/launch.sh << 'EOF'
 #!/bin/bash
 killall -q polybar
@@ -161,118 +272,176 @@ polybar top &
 EOF
 chmod +x ~/.config/polybar/launch.sh
 
+# powermenu.sh
 cat > ~/.config/polybar/powermenu.sh << 'EOF'
 #!/bin/bash
-choice=$(printf "suspend\npoweroff\nreboot\nlogout\nrestart bspwm" | dmenu -i -p "power menu")
+choice=$(printf "suspend
+poweroff
+reboot
+logout
+restart bspwm" | dmenu -i -p "power menu" -fn "JetBrainsMono-10" -nb "$THEME_BG" -nf "$THEME_FG" -sb "$THEME_FG" -sf "$THEME_BG" -h 24)
 case "$choice" in
-  suspend) systemctl suspend;;
-  poweroff) systemctl poweroff;;
-  reboot) systemctl reboot;;
-  logout) pkill -KILL -u $USER;;
-  restart\ bspwm) bspc wm -r;;
+  suspend) systemctl suspend ;;
+  poweroff) systemctl poweroff ;;
+  reboot) systemctl reboot ;;
+  logout) pkill -KILL -u $USER ;;
+  restart\ bspwm) bspc wm -r ;;
 esac
 EOF
 chmod +x ~/.config/polybar/powermenu.sh
 
-cat > ~/.config/polybar/wifimenu.sh << 'EOF'
-#!/bin/bash
-nmcli_dmenu
-EOF
-chmod +x ~/.config/polybar/wifimenu.sh
-
+# volumemenu.sh
 cat > ~/.config/polybar/volumemenu.sh << 'EOF'
 #!/bin/bash
-choice=$(printf "volume up\nvolume down\nmute\nopen mixer" | dmenu -i -p "volume")
+choice=$(printf "volume up
+volume down
+mute toggle
+open mixer" | dmenu -i -p "volume" -fn "JetBrainsMono-10" -nb "$THEME_BG" -nf "$THEME_FG" -sb "$THEME_FG" -sf "$THEME_BG" -h 24)
 case "$choice" in
-  volume\ up) wpctl set-volume @DEFAULT_AUDIO_SINK@ 5%+;;
-  volume\ down) wpctl set-volume @DEFAULT_AUDIO_SINK@ 5%-;;
-  mute) wpctl set-mute @DEFAULT_AUDIO_SINK@ toggle;;
-  open\ mixer) alacritty -e alsamixer;;
+  "volume up") wpctl set-volume @DEFAULT_AUDIO_SINK@ 5%+ && notify-send "🔊 volume up" ;;
+  "volume down") wpctl set-volume @DEFAULT_AUDIO_SINK@ 5%- && notify-send "🔉 volume down" ;;
+  "mute toggle") wpctl set-mute @DEFAULT_AUDIO_SINK@ toggle && notify-send "🔇 mute toggled" ;;
+  "open mixer") alacritty -e alsamixer ;;
 esac
 EOF
 chmod +x ~/.config/polybar/volumemenu.sh
 
-# 10. picom config
-cat > ~/.config/picom/picom.conf << 'EOF'
-backend = "glx";
-vsync = true;
-corner-radius = 0;
-opacity-rule = [ "90:class_g = 'Alacritty'" ];
+# wifimenu.sh
+cat > ~/.config/polybar/wifimenu.sh << 'EOF'
+#!/bin/bash
+SSID=$(nmcli -t -f SSID dev wifi list | sed '/^$/d' | sort -u | dmenu -i -p "WiFi SSID" -fn "JetBrainsMono-10" -nb "$THEME_BG" -nf "$THEME_FG" -sb "$THEME_FG" -sf "$THEME_BG" -h 24)
+[ -z "$SSID" ] && exit
+if nmcli -t -f NAME connection show | grep -q "^$SSID$"; then
+  nmcli connection up "$SSID"
+else
+  PASSWORD=$(dmenu -p "password for $SSID:" -P -fn "JetBrainsMono-10" -nb "$THEME_BG" -nf "$THEME_FG" -sb "$THEME_FG" -sf "$THEME_BG" -h 24)
+  nmcli dev wifi connect "$SSID" password "$PASSWORD"
+fi
+[ $? -eq 0 ] && notify-send "✅ connected to $SSID" || notify-send "❌ failed to connect to $SSID"
+EOF
+chmod +x ~/.config/polybar/wifimenu.sh
+
+# battery.sh
+cat > ~/.config/polybar/battery.sh << 'EOF'
+#!/bin/bash
+BAT=$(acpi -b)
+if [[ $BAT == *"charging"* ]]; then ICON="🔌"
+elif [[ $BAT == *"discharging"* ]]; then ICON="🔋"
+elif [[ $BAT == *"full"* ]]; then ICON="⚡"
+else ICON="❓"; fi
+PERCENT=$(echo "$BAT" | grep -o '[0-9]\+%' | head -n1)
+echo "$ICON $PERCENT"
+EOF
+chmod +x ~/.config/polybar/battery.sh
+
+# activewindow.sh
+cat > ~/.config/polybar/activewindow.sh << 'EOF'
+#!/bin/bash
+while true; do
+  win_id=$(xdotool getactivewindow 2>/dev/null)
+  [ -n "$win_id" ] && title=$(xprop -id "$win_id" WM_NAME | cut -d '"' -f 2) && echo "${title:0:60}" || echo ""
+  sleep 1
+done
+EOF
+chmod +x ~/.config/polybar/activewindow.sh
+
+# config.ini
+step "Writing Polybar config"
+cat > ~/.config/polybar/config.ini << 'EOF'
+[bar/top]
+width = 100%
+height = 24
+background = $THEME_BG
+foreground = $THEME_FG
+font-0 = JetBrainsMono:size=10;1
+modules-left = bspwm
+modules-center = activewindow
+modules-right = battery volume wlan date
+
+[module/bspwm]
+type = internal/bspwm
+label-focused = %name%
+label-focused-background = $THEME_FG
+label-focused-foreground = $THEME_BG
+label-occupied = %name%
+label-occupied-foreground = #aaaaaa
+label-empty = %name%
+label-empty-foreground = #555555
+
+[module/activewindow]
+type = custom/script
+exec = ~/.config/polybar/activewindow.sh
+tail = true
+
+[module/volume]
+type = internal/pulseaudio
+format-volume = 🔊 %percentage%%
+format-muted = 🔇 muted
+click-left = ~/.config/polybar/volumemenu.sh
+
+[module/wlan]
+type = internal/network
+interface = wlan0
+format-connected = 📶 %essid% (%signal%%)
+format-disconnected = ⚠️ no wifi
+click-left = ~/.config/polybar/wifimenu.sh
+
+[module/battery]
+type = custom/script
+exec = ~/.config/polybar/battery.sh
+interval = 30
+
+[module/bluetooth]
+
+[module/bluetooth]
+type = custom/script
+exec = ~/.config/polybar/bluetooth.sh
+interval = 10
+click-left = ~/.config/polybar/bluetoothmenu.sh
+
+
+[module/temp]
+
+[module/temp]
+type = custom/script
+exec = ~/.config/polybar/temperature.sh
+interval = 15
+
+
+[module/date]
+type = internal/date
+interval = 5
+format = 🕒 %H:%M %d/%m
 EOF
 
-# 11. alacritty config
-cat > ~/.config/alacritty/alacritty.yml << 'EOF'
-window:
-  opacity: 0.95
-  decorations: none
-  padding:
-    x: 6
-    y: 6
-colors:
-  primary:
-    background: '0x000000'
-    foreground: '0xffffff'
-font:
-  normal:
-    family: JetBrainsMono
-    size: 11
+# === Bluetooth Polybar Scripts ===
+cat > ~/.config/polybar/bluetooth.sh << 'EOF'
+#!/bin/bash
+if bluetoothctl show | grep -q 'Powered: yes'; then
+  echo " on"
+else
+  echo " off"
+fi
 EOF
+chmod +x ~/.config/polybar/bluetooth.sh
 
-# 12. dunst config
-cat > ~/.config/dunst/dunstrc << 'EOF'
-[global]
-    monitor = 0
-    follow = mouse
-    width = 300
-    height = 100
-    offset = 10x10
-    scale = 0
-    origin = top-right
-    font = JetBrainsMono 10
-    frame_width = 1
-    separator_height = 2
-    padding = 8
-    background = "#000000"
-    foreground = "#ffffff"
-    frame_color = "#ffffff"
+cat > ~/.config/polybar/bluetoothmenu.sh << 'EOF'
+#!/bin/bash
+choice=$(printf "enable bluetooth
+disable bluetooth
+open manager" | dmenu -i -p "bluetooth" -fn "JetBrainsMono-10" -nb "$THEME_BG" -nf "$THEME_FG" -sb "$THEME_FG" -sf "$THEME_BG" -h 24)
+case "$choice" in
+  "enable bluetooth") bluetoothctl power on && notify-send "Bluetooth enabled" ;;
+  "disable bluetooth") bluetoothctl power off && notify-send "Bluetooth disabled" ;;
+  "open manager") blueman-manager ;;
+esac
 EOF
+chmod +x ~/.config/polybar/bluetoothmenu.sh
 
-# 13. zsh config
-chsh -s /bin/zsh
-cat > ~/.zshrc << 'EOF'
-alias poweroff='systemctl poweroff'
-alias reboot='systemctl reboot'
-export TERM=xterm-256color
-autoload -Uz promptinit && promptinit
-prompt off
-alias ls='ls --color=never'
-neofetch
+# === Temperature Script ===
+cat > ~/.config/polybar/temperature.sh << 'EOF'
+#!/bin/bash
+TEMP=$(sensors | grep -m 1 'Core 0' | grep -o '+[0-9]\+.[0-9]°C')
+[ -n "$TEMP" ] && echo "🌡 $TEMP" || echo "🌡 N/A"
 EOF
-
-# 14. xinitrc fallback
-cat > ~/.xinitrc << 'EOF'
-exec bspwm
-EOF
-
-# 15. lightdm greeter config
-sudo mkdir -p /etc/lightdm
-
-# write greeter config
-sudo bash -c 'cat > /etc/lightdm/lightdm-gtk-greeter.conf' << EOF
-[greeter]
-theme-name=Adwaita
-gtk-theme-name=Adwaita
-icon-theme-name=Adwaita
-background=/usr/share/backgrounds/xfce/xfce-blue.jpg
-font-name=JetBrainsMono 11
-xft-antialias=true
-xft-hintstyle=hintfull
-EOF
-
-# set greeter session
-sudo bash -c 'cat > /etc/lightdm/lightdm.conf' << EOF
-[Seat:*]
-greeter-session=lightdm-gtk-greeter
-user-session=bspwm
-EOF
-echo -e "rice installation complete. reboot and login via lightdm."
+chmod +x ~/.config/polybar/temperature.sh
