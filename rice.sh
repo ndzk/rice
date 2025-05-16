@@ -1,17 +1,24 @@
 
+# === ThinkPad X220 Minimalist Rice Installer ===
+
+# Colors and UI helpers
+
+# === Advanced UI Setup ===
+
+# === GUI Setup using Zenity ===
+
 
 ensure_zenity_or_fallback() {
   if ! command -v zenity >/dev/null 2>&1; then
-    echo -e "\033[1;33mZenity is not installed. Attempt to install it? [Y/n]\033[0m"
-    read -r reply
-    if [[ "$reply" =~ ^[Nn]$ ]]; then
-      echo -e "\033[1;33mProceeding with terminal mode.\033[0m"
-      choose_theme
-    else
-      sudo pacman -S --noconfirm zenity && choose_theme_gui || choose_theme
-    fi
-  else
+    echo -e "[1;33mZenity not found. Installing...[0m"
+    sudo pacman -S --noconfirm zenity || true
+  fi
+
+  if command -v zenity >/dev/null 2>&1; then
     choose_theme_gui
+  else
+    echo -e "[1;33mZenity not working. Falling back to terminal selection.[0m"
+    choose_theme
   fi
 }
 
@@ -68,7 +75,7 @@ progress_bar() {
 
 header() {
   echo -e "\n\033[1;35m──────────────────────────────────────────────"
-  echo -e "rice installer"
+  echo -e "  rice installer"
   echo -e "──────────────────────────────────────────────\033[0m\n"
 }
 
@@ -138,22 +145,29 @@ fi
 
 success "Enhancements installed"
 
-# === Configure ThinkPad fan control ===
-step "Configuring fan control"
+# === Configure ThinkPad fan control (AUR safe) ===
+step "Setting up fan control with ThinkFan (AUR)"
 
-# Install thinkfan and sensors
-sudo pacman -S --noconfirm thinkfan lm_sensors
+# Install lm_sensors
+sudo pacman -S --noconfirm lm_sensors
+yes | sudo sensors-detect --auto
 
-# Enable fan control in kernel module
+# Load needed modules
+sudo modprobe thinkpad_acpi
+sudo modprobe coretemp
+
+# Enable fan control option
 echo "options thinkpad_acpi fan_control=1" | sudo tee /etc/modprobe.d/thinkfan.conf
 echo "thinkpad_acpi" | sudo tee /etc/modules-load.d/thinkfan.conf
 
-# Run sensors-detect automatically (no interaction)
-yes | sudo sensors-detect --auto
+# Install thinkfan from AUR if pacman version fails
+if ! pacman -Q thinkfan &>/dev/null; then
+  yay -S --noconfirm thinkfan
+fi
 
-# Create minimal thinkfan.conf
+# Configure using automatic sensor detection
 sudo tee /etc/thinkfan.conf >/dev/null << EOF
-sensor /sys/class/hwmon/hwmon0/temp1_input
+sensor auto
 
 (0,     0,      55)
 (1,     50,     60)
@@ -164,11 +178,14 @@ sensor /sys/class/hwmon/hwmon0/temp1_input
 (7,     78,     32767)
 EOF
 
-# Enable the thinkfan service
-sudo systemctl enable thinkfan
-sudo systemctl start thinkfan
+# Enable and restart thinkfan (ignore failure at this stage)
+sudo systemctl enable thinkfan || true
+sudo systemctl restart thinkfan || true
 
-success "Fan control configured"
+success "ThinkFan configured"
+
+
+
 
 
 
@@ -298,9 +315,9 @@ volume down
 mute toggle
 open mixer" | dmenu -i -p "volume" -fn "JetBrainsMono-10" -nb "$THEME_BG" -nf "$THEME_FG" -sb "$THEME_FG" -sf "$THEME_BG" -h 24)
 case "$choice" in
-  "volume up") wpctl set-volume @DEFAULT_AUDIO_SINK@ 5%+ && notify-send "🔊 volume up" ;;
-  "volume down") wpctl set-volume @DEFAULT_AUDIO_SINK@ 5%- && notify-send "🔉 volume down" ;;
-  "mute toggle") wpctl set-mute @DEFAULT_AUDIO_SINK@ toggle && notify-send "🔇 mute toggled" ;;
+  "volume up") wpctl set-volume @DEFAULT_AUDIO_SINK@ 5%+ && notify-send "🔊 Volume up" ;;
+  "volume down") wpctl set-volume @DEFAULT_AUDIO_SINK@ 5%- && notify-send "🔉 Volume down" ;;
+  "mute toggle") wpctl set-mute @DEFAULT_AUDIO_SINK@ toggle && notify-send "🔇 Mute toggled" ;;
   "open mixer") alacritty -e alsamixer ;;
 esac
 EOF
@@ -314,10 +331,10 @@ SSID=$(nmcli -t -f SSID dev wifi list | sed '/^$/d' | sort -u | dmenu -i -p "WiF
 if nmcli -t -f NAME connection show | grep -q "^$SSID$"; then
   nmcli connection up "$SSID"
 else
-  PASSWORD=$(dmenu -p "password for $SSID:" -P -fn "JetBrainsMono-10" -nb "$THEME_BG" -nf "$THEME_FG" -sb "$THEME_FG" -sf "$THEME_BG" -h 24)
+  PASSWORD=$(dmenu -p "Password for $SSID:" -P -fn "JetBrainsMono-10" -nb "$THEME_BG" -nf "$THEME_FG" -sb "$THEME_FG" -sf "$THEME_BG" -h 24)
   nmcli dev wifi connect "$SSID" password "$PASSWORD"
 fi
-[ $? -eq 0 ] && notify-send "✅ connected to $SSID" || notify-send "❌ failed to connect to $SSID"
+[ $? -eq 0 ] && notify-send "✅ Connected to $SSID" || notify-send "❌ Failed to connect to $SSID"
 EOF
 chmod +x ~/.config/polybar/wifimenu.sh
 
@@ -325,9 +342,9 @@ chmod +x ~/.config/polybar/wifimenu.sh
 cat > ~/.config/polybar/battery.sh << 'EOF'
 #!/bin/bash
 BAT=$(acpi -b)
-if [[ $BAT == *"charging"* ]]; then ICON="🔌"
-elif [[ $BAT == *"discharging"* ]]; then ICON="🔋"
-elif [[ $BAT == *"full"* ]]; then ICON="⚡"
+if [[ $BAT == *"Charging"* ]]; then ICON="🔌"
+elif [[ $BAT == *"Discharging"* ]]; then ICON="🔋"
+elif [[ $BAT == *"Full"* ]]; then ICON="⚡"
 else ICON="❓"; fi
 PERCENT=$(echo "$BAT" | grep -o '[0-9]\+%' | head -n1)
 echo "$ICON $PERCENT"
