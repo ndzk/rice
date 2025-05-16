@@ -145,6 +145,16 @@ fi
 
 success "Enhancements installed"
 
+# === Install xautolock from AUR ===
+step "Installing xautolock (AUR)"
+yay -S --noconfirm xautolock
+
+# Autostart xautolock with BSPWM
+echo 'xautolock -time 10 -locker "betterlockscreen -l" &' >> ~/.config/bspwm/bspwmrc
+
+success "xautolock configured"
+
+
 # === Install acpi_call for manual fan control ===
 step "Installing ACPI fan control tools"
 sudo pacman -S --noconfirm acpi_call
