@@ -37,7 +37,7 @@ choose_theme_gui() {
       THEME_FG="#ffffff"
     fi
   else
-    echo -e "\033[0m"
+    echo -e "\033[1;31mZenity not found, falling back to terminal theme selection.\033[0m"
     choose_theme
   fi
 }
@@ -70,7 +70,7 @@ progress_bar() {
     echo -n "."
     sleep 0.1
   done
-  echo -e " \033[0m"
+  echo -e " \033[1;32m✔\033[0m"
 }
 
 header() {
@@ -80,15 +80,15 @@ header() {
 }
 
 step() {
-  echo -e "\033[0m"
+  echo -e "\033[1;34m🔧 $1...\033[0m"
 }
 
 success() {
-  echo -e "\033[0m"
+  echo -e "\033[1;32m[✔] $1\033[0m"
 }
 
 fail() {
-  echo -e "\033[0m"
+  echo -e "\033[1;31m[❌] $1\033[0m"
 }
 
 header
@@ -145,34 +145,44 @@ fi
 
 success "Enhancements installed"
 
-# === Install xautolock from AUR ===
-step "Installing xautolock (AUR)"
-yay -S --noconfirm xautolock
+# === Configure ThinkPad fan control (AUR safe) ===
+step "Setting up fan control with ThinkFan (AUR)"
 
-# Autostart xautolock with BSPWM
-echo 'xautolock -time 10 -locker "betterlockscreen -l" &' >> ~/.config/bspwm/bspwmrc
+# Install lm_sensors
+sudo pacman -S --noconfirm lm_sensors
+yes | sudo sensors-detect --auto
 
-success "xautolock configured"
+# Load needed modules
+sudo modprobe thinkpad_acpi
+sudo modprobe coretemp
 
+# Enable fan control option
+echo "options thinkpad_acpi fan_control=1" | sudo tee /etc/modprobe.d/thinkfan.conf
+echo "thinkpad_acpi" | sudo tee /etc/modules-load.d/thinkfan.conf
 
-# === Install acpi_call for manual fan control ===
-step "Installing ACPI fan control tools"
-sudo pacman -S --noconfirm acpi_call
+# Install thinkfan from AUR if pacman version fails
+if ! pacman -Q thinkfan &>/dev/null; then
+  yay -S --noconfirm thinkfan
+fi
 
-# Simple fan control script
-mkdir -p ~/.local/bin
-cat > ~/.local/bin/fancontrol.sh << 'EOF'
-#!/bin/bash
-# Manual fan control for ThinkPad (may vary per model)
-# This sets fan to manual low speed
-echo level 3 | sudo tee /proc/acpi/ibm/fan
+# Configure using automatic sensor detection
+sudo tee /etc/thinkfan.conf >/dev/null << EOF
+sensor auto
+
+(0,     0,      55)
+(1,     50,     60)
+(2,     58,     65)
+(3,     63,     70)
+(4,     68,     75)
+(5,     73,     80)
+(7,     78,     32767)
 EOF
-chmod +x ~/.local/bin/fancontrol.sh
 
-success "Manual fan control script installed"
+# Enable and restart thinkfan (ignore failure at this stage)
+sudo systemctl enable thinkfan || true
+sudo systemctl restart thinkfan || true
 
-
-
+success "ThinkFan configured"
 
 
 
@@ -189,6 +199,9 @@ sudo pacman -S --noconfirm i3lock xautolock
 betterlockscreen -u ~/Pictures/wallpaper.png
 
 # Autolock after 10 min idle
+mkdir -p ~/.config/bspwm
+touch ~/.config/bspwm/bspwmrc
+grep -q 'xautolock' ~/.config/bspwm/bspwmrc || echo 'xautolock -time 10 -locker "betterlockscreen -l" &' >> ~/.config/bspwm/bspwmrc
 
 # Handle lid close with systemd (lock on suspend)
 step "Configuring lid close action"
@@ -220,8 +233,6 @@ curl -L -o ~/Pictures/wallpaper.png https://i.imgur.com/cKr62pe.png
 # 6. BSPWM config
 step "Setting up BSPWM config"
 cat > ~/.config/bspwm/bspwmrc << 'EOF'
-# fan control autostart
-~/.local/bin/fancontrol.sh &
 #!/bin/bash
 setxkbmap pl
 sxhkd &
